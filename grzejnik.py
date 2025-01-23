@@ -16,87 +16,49 @@ class PI:
         self.u_prev = 0.0
         self.e_prev = 0.0
         self.delta_u = 0
-
     def reset(self):
         self.u_prev = 0.0
         self.e_prev = 0.0
-
     def update(self, setpoint, measurement):
         e = setpoint - measurement
         delta_e = e - self.e_prev
 
-        delta_u = self.kp * (delta_e + (self.Tp / self.Ti) * e)
-        self.delta_u = delta_u
-        u = self.u_prev + delta_u
+        self.delta_u = self.kp * (delta_e + (self.Tp / self.Ti) * e)
+        u = self.u_prev + self.delta_u
 
-        u = np.clip(u, self.u_min, self.u_max)
-
+        u = np.clip(u, 0, 1)
         self.e_prev = e
         self.u_prev = u
-
         return u
 
-
-# Funkcja Symulacji
 def simulate_2h(kp, Ti, setpoint, Tp, T_init=20.0, T_outside=15.0):
-    # Właściwości fizyczne i stałe
-    VOLUME = 4.0 * 4.0 * 2.5  # m³
-    AIR_DENSITY = 1.2  # kg/m³
-    AIR_CAPACITY = 1005.0  # J/(kg·°C)
-    MASS = VOLUME * AIR_DENSITY
-    C = MASS * AIR_CAPACITY
-    max_power = 5000.0
+    VOLUME = 0.112 # 0.8 x 0.35 x 0.4
+    water_density = 997  # kg/m³
+    water_CAPACITY = 4189.9  # J/(kg·°C)
+    MASS = VOLUME * water_density
+    max_power = 200.0
 
-
-    U_DOOR = 1.3
-    DOOR_AREA = 1.8
-
-    U_WINDOW = 0.9
-    WINDOW_AREA = 1.35
-
-    U_ROOF = 0.15
-    ROOF_AREA = 16
-
-    U_GROUND = 0.3
-    GROUND_AREA = 16
-
-    U_WALL = 0.2
-    WALL_AREA = 40.0 - DOOR_AREA - WINDOW_AREA
-
-    SIM_TIME = int((2 * 3600) / Tp)
+    SIM_TIME = int((4 * 3600) / Tp)
     pid = PI(kp=kp, Ti=Ti, Tp=Tp, u_min=0, u_max=max_power)
     pid.reset()
     time_array = []
     temp_array = []
     power_array = []
     heat_loss_array = []
-    T_room = T_init
+    T_water = T_init
 
     for t in range(SIM_TIME):
         current_time_min = t * Tp / 60  # Konwersja na minuty
         time_array.append(current_time_min)
-        temp_array.append(T_room)
+        temp_array.append(T_water)
+        Q = pid.update(setpoint,T_water)*max_power
 
-        # Obliczanie strat ciepła
-        heat_loss_walls = U_WALL * WALL_AREA * (T_room - T_outside)
-        heat_loss_door = U_DOOR * DOOR_AREA * (T_room - T_outside)
-        heat_loss_window = U_WINDOW * WINDOW_AREA * (T_room - T_outside)
-        heat_loss_roof = U_ROOF * ROOF_AREA * (T_room - T_outside)
-        heat_loss_ground = U_GROUND * GROUND_AREA * (T_room - T_outside)
+        Qloss = 1*1.68*(T_water - T_outside)
+        dT = ((Q-Qloss)/(MASS*water_CAPACITY))*Tp
 
-        total_heat_loss = (heat_loss_walls + heat_loss_door + heat_loss_window + heat_loss_roof)*0.5
-        heat_loss_array.append(total_heat_loss)
-
-        # Aktualizacja mocy grzejnika uwzględniająca powierzchnię grzejnika
-        P_grzejnik = pid.update(setpoint, T_room)
-        P_grzejnik_total = np.clip(P_grzejnik, 0, max_power)  # Ograniczenie do u_max
-        power_array.append(P_grzejnik_total)
-
-        # Aktualizacja temperatury w pomieszczeniu
-        q = P_grzejnik_total  # Energia dodana przez grzejnik
-        dT = (q - total_heat_loss * Tp) / C
-        T_room += dT
-
+        T_water += dT
+        power_array.append(Q)
+        heat_loss_array.append(Qloss)
     return time_array, temp_array, power_array, heat_loss_array
 
 
@@ -107,13 +69,11 @@ app.title = "Symulacja ogrzewania"
 # Lista możliwych wartości Tp
 tp_values = [0.1, 0.5, 1, 2, 5]
 
-# Domyślna powierzchnia grzejnika
-DEFAULT_A_HEATER = 1.5  # m²
 
 # Układ aplikacji
 app.layout = dbc.Container([
     dbc.Row([
-        dbc.Col(html.H1("Symulacja ogrzewania pokoju", className="text-center text-primary mb-4"),
+        dbc.Col(html.H1("Symulacja akwarium", className="text-center text-primary mb-4"),
                 width=12)
     ]),
     dbc.Row([
@@ -135,11 +95,11 @@ app.layout = dbc.Container([
                 dbc.Label("Ti [s]:"),
                 dcc.Slider(
                     id='input-ti',
-                    min=0.1,
-                    max=10,
+                    min=0,
+                    max=50,
                     step=0.1,
-                    value=5,
-                    marks={i: f"{i}" for i in range(0, 11)},
+                    value=20,
+                    marks={i: f"{i}" for i in range(0, 51,5)},
                     tooltip={"placement": "bottom", "always_visible": True}
                 ),
 
@@ -149,7 +109,7 @@ app.layout = dbc.Container([
                     min=0,
                     max=len(tp_values) - 1,
                     step=1,
-                    value=2,  # Domyślna wartość odpowiadająca Tp=1
+                    value=2,
                     marks={i: f"{tp_values[i]} s" for i in range(len(tp_values))},
                     tooltip={"placement": "bottom", "always_visible": True}
                 ),
@@ -162,7 +122,7 @@ app.layout = dbc.Container([
                     step=0.5
                 ),
 
-                dbc.Label("Temperatura na zewnątrz (°C):"),
+                dbc.Label("Temperatura powietrza (°C):"),
                 dbc.Input(
                     id='input-outside-temp',
                     type='number',
@@ -205,8 +165,6 @@ def update_figures(kp, ti, tp_index, setpoint, outside_temp):
     setpoint = setpoint if setpoint is not None else 23.0
     T_outside = outside_temp if outside_temp is not None else 15.0
 
-    # Stała powierzchnia grzejnika
-    A_heater = DEFAULT_A_HEATER
 
     # Uruchomienie symulacji
     time_array, temp_array, power_array, heat_loss_array = simulate_2h(
@@ -224,7 +182,7 @@ def update_figures(kp, ti, tp_index, setpoint, outside_temp):
         mode='lines',
         name='Temperatura (°C)',
         line=dict(color='red'),
-        hovertemplate='Czas: %{x:.1f} min<br>Temperatura: %{y:.1f} °C<extra></extra>'
+        hovertemplate='Czas: %{x:.1f} min<br>Temperatura: %{y:.0f} °C<extra></extra>'
     )
 
     # Tworzenie śladu dla temperatury zadanej
@@ -242,9 +200,9 @@ def update_figures(kp, ti, tp_index, setpoint, outside_temp):
         x=time_array,
         y=power_array,
         mode='lines',
-        name='Moc grzejnika (W)',
+        name='Moc grzałki (W)',
         line=dict(color='green'),
-        hovertemplate='Czas: %{x:.1f} min<br>Moc: %{y:.1f} W<extra></extra>'
+        hovertemplate='Czas: %{x:.1f} min<br>Moc: %{y:.2f} W<extra></extra>'
     )
 
     # Tworzenie śladu dla strat ciepła
@@ -252,12 +210,11 @@ def update_figures(kp, ti, tp_index, setpoint, outside_temp):
         x=time_array,
         y=heat_loss_array,
         mode='lines',
-        name='Strata ciepła (W)',
+        name='Strata ciepła (J)',
         line=dict(color='orange'),
-        hovertemplate='Czas: %{x:.1f} min<br>Strata ciepła: %{y:.1f} W<extra></extra>'
+        hovertemplate='Czas: %{x:.1f} min<br>Energia: %{y:.2f} J<extra></extra>'
     )
 
-    # Konfiguracja wykresu temperatury
     fig_temp = go.Figure()
     fig_temp.add_trace(trace_temp)
     fig_temp.add_trace(trace_setpoint)
@@ -265,10 +222,9 @@ def update_figures(kp, ti, tp_index, setpoint, outside_temp):
         xaxis=dict(title='Czas (minuty)'),
         yaxis=dict(title='Temperatura (°C)', side='left'),
         legend=dict(x=0.01, y=0.99),
-        title='Symulacja ogrzewania z regulatorem PI - Temperatura',
+        title='Symulacja ogrzewania',
     )
 
-    # Konfiguracja wykresu mocy grzejnika i strat ciepła
     fig_power = go.Figure()
     fig_power.add_trace(trace_power)
     fig_power.add_trace(trace_heat_loss)
@@ -276,7 +232,7 @@ def update_figures(kp, ti, tp_index, setpoint, outside_temp):
         xaxis=dict(title='Czas (minuty)'),
         yaxis=dict(title='Moc/Strata (W)'),
         legend=dict(x=0.01, y=0.99),
-        title='Symulacja ogrzewania z regulatorem PI - Moc Grzejnika i Strata Ciepła',
+        title='Moc grzałki i strata ciepła',
     )
 
     return fig_temp, fig_power
