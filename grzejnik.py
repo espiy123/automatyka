@@ -26,7 +26,7 @@ class PI:
         self.delta_u = self.kp * (delta_e + (self.Tp / self.Ti) * e)
         u = self.u_prev + self.delta_u
 
-        u = np.clip(u, 0, 1)
+        u = np.clip(u, 0,300)
         self.e_prev = e
         self.u_prev = u
         return u
@@ -36,9 +36,9 @@ def simulate_2h(kp, Ti, setpoint, Tp, T_init=20.0, T_outside=15.0):
     water_density = 997  # kg/m³
     water_CAPACITY = 4189.9  # J/(kg·°C)
     MASS = VOLUME * water_density
-    max_power = 200.0
+    max_power = 300.0
 
-    SIM_TIME = int((4 * 3600) / Tp)
+    SIM_TIME = int((8 * 3600) / Tp)
     pid = PI(kp=kp, Ti=Ti, Tp=Tp, u_min=0, u_max=max_power)
     pid.reset()
     time_array = []
@@ -46,16 +46,14 @@ def simulate_2h(kp, Ti, setpoint, Tp, T_init=20.0, T_outside=15.0):
     power_array = []
     heat_loss_array = []
     T_water = T_init
-
     for t in range(SIM_TIME):
         current_time_min = t * Tp / 60  # Konwersja na minuty
         time_array.append(current_time_min)
         temp_array.append(T_water)
-        Q = pid.update(setpoint,T_water)*max_power
-
-        Qloss = 1*1.68*(T_water - T_outside)
-        dT = ((Q-Qloss)/(MASS*water_CAPACITY))*Tp
-
+        Q = pid.update(setpoint,T_water)
+        Qloss = 1.5*1.68*(T_water - T_outside)
+        dQ = Q - Qloss
+        dT = (dQ/(MASS*water_CAPACITY))*Tp
         T_water += dT
         power_array.append(Q)
         heat_loss_array.append(Qloss)
@@ -96,10 +94,10 @@ app.layout = dbc.Container([
                 dcc.Slider(
                     id='input-ti',
                     min=0,
-                    max=50,
-                    step=0.1,
-                    value=20,
-                    marks={i: f"{i}" for i in range(0, 51,5)},
+                    max=10,
+                    step=0.01,
+                    value=1,
+                    marks={i: f"{i}" for i in range(0, 10,1)},
                     tooltip={"placement": "bottom", "always_visible": True}
                 ),
 
